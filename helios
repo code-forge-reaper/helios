@@ -1,0 +1,235 @@
+#!/usr/bin/env python
+from nodes import *
+
+
+class Frame:
+    def __init__(self, parent=None):
+        self.parent = parent
+        self.vars = {}
+        self._stack = []
+        if parent:
+            self._stack = parent._stack  # Shared stack logic
+
+    def push(self, value):
+        self._stack.append(value)
+
+    def pop(self):
+        if not self._stack:
+            raise ValueError("Stack underflow")
+        x = self._stack.pop()
+        return x
+
+    def set(self, name, value):
+        self.vars[name] = value
+
+    def get(self, name):
+        if name in ["true", "false"]:
+            return name == "true"
+        if name in self.vars:
+            return self.vars[name]
+        if self.parent:
+            return self.parent.get(name)
+        raise ValueError(f"{name} is not defined")
+
+
+class Vm:
+    def __init__(self, filename):
+        with open(filename, "r") as f:
+            raw_tokens = tokenizer.tokenize(f.read(), f.name)
+
+        # Phase 1: Parsing
+        parser = Parser(raw_tokens)
+        self.functions = parser.parse_program()
+
+        # Phase 2: Runtime Setup
+        self.frames = [Frame()]
+        self.funcs = {}
+        buildBuiltins(self)
+
+    def run_function(self, fn_def: FunctionDef):
+        # Bind Arguments
+        # Note: In stack languages, args are usually popped in reverse order
+        for arg_name in reversed(fn_def.args):
+            val = self.frames[-1].pop()
+            self.frames[-1].set(arg_name, val)
+
+        self.execute_block(fn_def.body)
+
+    def execute_block(self, block: Block):
+        for node in block.statements:
+            try:
+                if not self.frames:
+                    break  # handled 'done'
+                before = self.frames[-1]._stack.copy()
+                self.execute_node(node)
+                after = self.frames[-1]._stack
+                if strace:
+                    print("..." * (len(self.frames) - 1), end="")
+                    pprint(f"{node} :: {before} -> {after}")
+            except Return:
+                break
+
+    def execute_node(self, node: ASTNode):
+        frame = self.frames[-1]
+
+        if isinstance(node, Literal):
+            frame.push(node.value)
+
+        elif isinstance(node, Identifier):
+            if node.name in self.functions:
+                if len(self.frames) >= MAX_F:
+                    raise ValueError("Stack overflow")
+
+                new_frame = Frame(frame)
+                self.frames.append(new_frame)
+                if strace:
+                    print(" " * (len(self.frames) - 1), end="")
+                    print(">>", node.name)
+                self.run_function(self.functions[node.name])
+                if strace:
+                    print(" " * (len(self.frames) - 1), end="")
+                    print("<<", node.name)
+                self.frames.pop()
+            # Check for Variables
+            else:
+                val = frame.get(node.name)
+                frame.push(val)
+
+        elif isinstance(node, Intrinsic):
+            if node.name == "pop":
+                frame.pop()
+            elif node.name == "top":
+                size = len(frame._stack)
+                frame.push(size)
+            elif node.name == "syscall":
+                id = frame.pop()
+                self.funcs[id](frame)
+            elif node.name == "return":
+                raise Return()
+            elif node.name == "break":
+                raise Break()
+            elif node.name == "continue":
+                raise Continue()
+            elif node.name == "DEBUG_ACTIVE":
+                frame.push(strace)
+            elif node.name == "done":
+                self.frames.clear()  # Hard stop
+
+        elif isinstance(node, If):
+            cond = frame.pop()
+            if cond:
+                self.execute_block(node.body)
+            elif node.else_block:
+                self.execute_block(node.else_block)
+
+        elif isinstance(node, Op):
+            b = frame.pop()
+            a = frame.pop()
+            if node.symbol == "+":
+                frame.push(a + b)
+            elif node.symbol == "-":
+                frame.push(a - b)
+            elif node.symbol == "*":
+                frame.push(a * b)
+            elif node.symbol == "/":
+                frame.push(a / b)
+            elif node.symbol == "==":
+                frame.push(a == b)
+            elif node.symbol == "!=":
+                frame.push(a != b)
+
+        elif isinstance(node, Attribute):
+            val = frame.pop()
+            if node.name == "str":
+                frame.push(str(val))
+            elif node.name == "int":
+                frame.push(int(val))
+            elif node.name == "float":
+                frame.push(float(val))
+            elif node.name == "bool":
+                frame.push(bool(val))
+            elif node.name == "type":
+                frame.push(type(val))
+
+        elif isinstance(node, Repeat):
+            count = frame.pop()
+            if not isinstance(count, int):
+                raise ValueError(f"Repeat count must be int, got {type(count)}")
+            for _ in range(count):
+                try:
+                    self.execute_block(node.body)
+                except Break:
+                    break
+                except Continue:
+                    continue
+
+        elif isinstance(node, While):
+            while True:
+                v = frame.pop()
+                if not v:
+                    break
+                try:
+                    self.execute_block(node.body)
+                except Break:
+                    break
+                except Continue:
+                    continue
+
+        elif isinstance(node, MultiSet):
+            # [ a, b ] pops b, then a
+            # The list in AST is [a, b].
+            # Stack top is 'b value', then 'a value'.
+
+            # We need to assign right-to-left based on stack order
+            for name in reversed(node.names):
+                frame.set(name, frame.pop())
+
+    def run(self):
+        if "main" not in self.functions:
+            raise ValueError("No main function defined")
+
+        # Create a frame for main and run it
+        self.run_function(self.functions["main"])
+
+
+def buildBuiltins(interp: Vm):
+    import tty
+    import termios
+
+    interp.frames[0].set("stdin", sys.stdin)
+    interp.frames[0].set("stdout", sys.stdout)
+    interp.frames[0].set("stderr", sys.stderr)
+    fid = 0
+
+    def add(fn):
+        nonlocal fid
+        interp.funcs[fid + 1] = fn
+        fid += 1
+
+    def write(f):
+        where = f.pop()
+        text = str(f.pop())
+        where.write(text)
+
+    def read(f):
+        where = f.pop()
+        char = where.read()
+        f.push(char)
+
+    def Open(f):
+        path = f.pop()
+        mode = f.pop()
+        f.push(open(path, mode))
+
+    add(Open)
+
+    add(write)
+    add(read)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: ./helios.py <file>")
+        sys.exit(1)
+    vm = Vm(sys.argv[1])
+    vm.run()

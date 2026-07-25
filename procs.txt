@@ -1,0 +1,39 @@
+print:
+begin
+	@str stdout 2 syscall
+	"\n" stdout 2 syscall
+end
+
+write:
+begin
+	2 syscall
+end
+
+swap: a b
+begin
+	b a
+end
+
+dup: x
+begin
+	x x
+end
+
+dropStack: begin
+	// top = how many elements are on the stack
+	top
+	while // while top of the stack isn't 0
+		print
+		pop
+		top// push new element count
+	end
+end
+
+rot3: a b c begin
+	a c b
+end
+
+over: a b
+begin
+	a b a
+end

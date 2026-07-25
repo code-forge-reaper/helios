@@ -1,0 +1,11 @@
+#use "procs.txt"
+
+main:
+	begin
+		24 53
+		[x, y]
+		"x = " x @str +
+		"y = " y @str +
+		swap
+		top repeat print end
+	end
