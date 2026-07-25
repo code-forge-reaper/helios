@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from typing import IO
+
 from nodes import *
 
 
@@ -101,7 +103,7 @@ class Vm:
             elif node.name == "top":
                 size = len(frame._stack)
                 frame.push(size)
-            elif node.name == "syscall":
+            elif node.name == "vcall":
                 id = frame.pop()
                 self.funcs[id](frame)
             elif node.name == "return":
@@ -165,15 +167,15 @@ class Vm:
 
         elif isinstance(node, While):
             while True:
-                v = frame.pop()
-                if not v:
-                    break
                 try:
                     self.execute_block(node.body)
                 except Break:
                     break
                 except Continue:
                     continue
+                v = frame.pop()
+                if not v:
+                    break
 
         elif isinstance(node, MultiSet):
             # [ a, b ] pops b, then a
@@ -193,9 +195,6 @@ class Vm:
 
 
 def buildBuiltins(interp: Vm):
-    import tty
-    import termios
-
     interp.frames[0].set("stdin", sys.stdin)
     interp.frames[0].set("stdout", sys.stdout)
     interp.frames[0].set("stderr", sys.stderr)
@@ -207,13 +206,14 @@ def buildBuiltins(interp: Vm):
         fid += 1
 
     def write(f):
-        where = f.pop()
-        text = str(f.pop())
+        where: IO = f.pop()
+        text = f.pop()
         where.write(text)
 
     def read(f):
-        where = f.pop()
-        char = where.read()
+        where: IO = f.pop()
+        bcount = f.pop()
+        char = where.read(bcount)
         f.push(char)
 
     def Open(f):
@@ -225,6 +225,7 @@ def buildBuiltins(interp: Vm):
 
     add(write)
     add(read)
+    add(lambda t: t.pop().flush())
 
 
 if __name__ == "__main__":

@@ -21,10 +21,11 @@ tokenizer.KEYWORDS.update(
         "TOGGLE_DEBUG_OUTPUT",
         "DEBUG_ACTIVE",
         "while",
+        "do",
         "if",
         "else",
         "top",
-        "syscall"
+        "vcall"
     })
 
 MAX_F = 100
@@ -204,7 +205,7 @@ class Parser:
             # Handle nested structures (they may consume their own 'end')
             if self.peek().type == "repeat":
                 stmts.append(self.parse_repeat())
-            elif self.peek().type == "while":
+            elif self.peek().type == "do":
                 stmts.append(self.parse_while())
             elif self.peek().type == "if":
                 stmts.append(self.parse_if())
@@ -235,9 +236,9 @@ class Parser:
         return Repeat(body)
 
     def parse_while(self):
+        self.expect(value="do")
+        body = self._parse_until({"while"})
         self.expect(value="while")
-        body = self._parse_until({"end"})
-        self.expect(value="end")
         return While(body)
 
     def parse_statement(self):
@@ -269,7 +270,7 @@ class Parser:
             return Attribute(t.value[1:])  # strip @
 
         # 5. Keywords / Intrinsics
-        elif t.type in ["pop", "DEBUG_ACTIVE", "top", "return", "break", "continue", "done", "syscall"]:
+        elif t.type in ["pop", "DEBUG_ACTIVE", "top", "return", "break", "continue", "done", "vcall"]:
             self.advance()
             return Intrinsic(t.value)
 

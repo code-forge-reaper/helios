@@ -1,12 +1,12 @@
 print:
 begin
-  @str stdout 2 syscall
-  "\n" stdout 2 syscall
+  @str stdout 2 vcall
+  "\n" stdout 2 vcall
 end
 
 write:
 begin
-  2 syscall
+  2 vcall
 end
 
 swap: a b
@@ -19,14 +19,16 @@ begin
   x x
 end
 
+dprint:begin
+  dup print
+end
+
 dropStack: begin
   // top = how many elements are on the stack
-  top
-  while // while top of the stack isn't 0
-    print
+  do // while top of the stack isn't 0
     pop
     top// push new element count
-  end
+  while
 end
 
 rot3: a b c begin
