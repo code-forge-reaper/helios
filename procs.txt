@@ -1,7 +1,15 @@
+/*
+    add(Open)   # 1
+    add(write)  # 2
+    add(read)   # ...
+    add(lambda t: t.pop().flush())
+*/
+
 print:
 begin
   @str stdout 2 vcall
   "\n" stdout 2 vcall
+  stdout 4 vcall
 end
 
 write:
@@ -31,8 +39,12 @@ dropStack: begin
   while
 end
 
-rot3: a b c begin
-  a c b
+rot: a b c begin
+  b c a
+end
+
+rrot: a b c begin
+  c a b
 end
 
 over: a b
