@@ -164,18 +164,42 @@ def tokenize(source: str, file: str) -> list[Token]:
                 )
 
             continue
+        # Negative numbers (including hex)
         if currentToken == "-":
             start = index
             start_col = column
+
             if index + 1 < len(source):
                 next_char = source[index + 1]
+
+                # Negative hex
+                if (
+                    next_char == "0"
+                    and index + 3 < len(source)
+                    and source[index + 2] in "xX"
+                    and source[index + 3] in "0123456789abcdefABCDEF"
+                ):
+                    index += 3
+                    column += 3
+                    while (
+                        index < len(source)
+                        and source[index] in "0123456789abcdefABCDEF"
+                    ):
+                        index += 1
+                        column += 1
+                    addToken("NUMBER", source[start:index], line, start_col)
+                    continue
+
+                # Negative decimal
                 if next_char.isdigit():
-                    # Negative number
                     index += 1
                     column += 1
+
                     while index < len(source) and source[index].isdigit():
                         index += 1
                         column += 1
+
+                    # Float support
                     if (
                         index < len(source)
                         and source[index] == "."
@@ -187,27 +211,38 @@ def tokenize(source: str, file: str) -> list[Token]:
                         while index < len(source) and source[index].isdigit():
                             index += 1
                             column += 1
+
                     addToken("NUMBER", source[start:index], line, start_col)
                     continue
-                elif next_char.isalpha() or next_char == "_":
-                    # Negative identifier
-                    index += 1
-                    column += 1
-                    while index < len(source) and (
-                        source[index].isalnum() or source[index] == "_"
-                    ):
-                        index += 1
-                        column += 1
-                    addToken("NEG_ID", source[start:index], line, start_col)
-                    continue
 
-        # Number literal (int and float)
+        # Positive hex literal
+        if (
+            currentToken == "0"
+            and index + 2 < len(source)
+            and source[index + 1] in "xX"
+            and source[index + 2] in "0123456789abcdefABCDEF"
+        ):
+            start = index
+            start_col = column
+            index += 2
+            column += 2
+
+            while index < len(source) and source[index] in "0123456789abcdefABCDEF":
+                index += 1
+                column += 1
+
+            addToken("NUMBER", source[start:index], line, start_col)
+            continue
+
+        # Decimal number (int/float)
         if currentToken.isdigit():
             start = index
             start_col = column
+
             while index < len(source) and source[index].isdigit():
                 index += 1
                 column += 1
+
             if (
                 index < len(source)
                 and source[index] == "."
@@ -219,6 +254,7 @@ def tokenize(source: str, file: str) -> list[Token]:
                 while index < len(source) and source[index].isdigit():
                     index += 1
                     column += 1
+
             addToken("NUMBER", source[start:index], line, start_col)
             continue
         if currentToken.isalpha() or currentToken == "_":
@@ -235,9 +271,12 @@ def tokenize(source: str, file: str) -> list[Token]:
             else:
                 addToken("ID", val, line, start_col)
             continue
-
+        if currentToken == "-" and source[index + 1] == ">":
+            addToken("arrow", "->", line, start_col)
+            index += 2
+            continue
         # Operators and punctuation (including '&', '!', etc.)
-        if currentToken in "=!<>+-*/&%|":
+        if currentToken in "=!<>+-*/&%|$":
             if index + 1 < len(source):
                 two_char = source[index : index + 2]
                 if two_char in {
@@ -278,6 +317,8 @@ if __name__ == "__main__":
     source = """
     prototype foo(...);
     var x int = -42.5;
+    var y int = 0x0000;
+    var z int = -0x2A;
     // comment
     /* multi
         line */

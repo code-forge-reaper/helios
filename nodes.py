@@ -25,7 +25,6 @@ tokenizer.KEYWORDS.update(
         "if",
         "else",
         "top",
-        "vcall"
     })
 
 MAX_F = 100
@@ -270,7 +269,7 @@ class Parser:
             return Attribute(t.value[1:])  # strip @
 
         # 5. Keywords / Intrinsics
-        elif t.type in ["pop", "DEBUG_ACTIVE", "top", "return", "break", "continue", "done", "vcall"]:
+        elif t.type in ["pop", "DEBUG_ACTIVE", "top", "return", "break", "continue", "done"]:
             self.advance()
             return Intrinsic(t.value)
 

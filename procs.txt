@@ -7,14 +7,14 @@
 
 print:
 begin
-  @str stdout 2 vcall
-  "\n" stdout 2 vcall
-  stdout 4 vcall
+  @str stdout @write
+  "\n" stdout @write
+  stdout @flush
 end
 
 write:
 begin
-  2 vcall
+  @write
 end
 
 swap: a b
@@ -29,6 +29,10 @@ end
 
 dprint:begin
   dup print
+end
+
+nprint:begin
+  repeat print end
 end
 
 dropStack: begin

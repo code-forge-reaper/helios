@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from typing import IO
-
+import nodes
 from nodes import *
 
 
@@ -19,6 +19,12 @@ class Frame:
         if not self._stack:
             raise ValueError("Stack underflow")
         x = self._stack.pop()
+        return x
+
+    def top(self):
+        if not self._stack:
+            raise ValueError("Stack underflow")
+        x = self._stack[-1]
         return x
 
     def set(self, name, value):
@@ -46,7 +52,6 @@ class Vm:
         # Phase 2: Runtime Setup
         self.frames = [Frame()]
         self.funcs = {}
-        buildBuiltins(self)
 
     def run_function(self, fn_def: FunctionDef):
         # Bind Arguments
@@ -65,9 +70,9 @@ class Vm:
                 before = self.frames[-1]._stack.copy()
                 self.execute_node(node)
                 after = self.frames[-1]._stack
-                if strace:
-                    print("..." * (len(self.frames) - 1), end="")
-                    pprint(f"{node} :: {before} -> {after}")
+                if nodes.strace:
+                    print("    - " * (len(self.frames) - 1), end="", file=sys.stderr)
+                    print(f"{node} :: {before} -> {after}", file=sys.stderr)
             except Return:
                 break
 
@@ -84,13 +89,13 @@ class Vm:
 
                 new_frame = Frame(frame)
                 self.frames.append(new_frame)
-                if strace:
-                    print(" " * (len(self.frames) - 1), end="")
-                    print(">>", node.name)
+                if nodes.strace:
+                    print(" " * (len(self.frames) - 1), end="", file=sys.stderr)
+                    print(">>", node.name, file=sys.stderr)
                 self.run_function(self.functions[node.name])
-                if strace:
-                    print(" " * (len(self.frames) - 1), end="")
-                    print("<<", node.name)
+                if nodes.strace:
+                    print(" " * (len(self.frames) - 1), end="", file=sys.stderr)
+                    print("<<", node.name, file=sys.stderr)
                 self.frames.pop()
             # Check for Variables
             else:
@@ -103,9 +108,6 @@ class Vm:
             elif node.name == "top":
                 size = len(frame._stack)
                 frame.push(size)
-            elif node.name == "vcall":
-                id = frame.pop()
-                self.funcs[id](frame)
             elif node.name == "return":
                 raise Return()
             elif node.name == "break":
@@ -113,7 +115,7 @@ class Vm:
             elif node.name == "continue":
                 raise Continue()
             elif node.name == "DEBUG_ACTIVE":
-                frame.push(strace)
+                frame.push(nodes.strace)
             elif node.name == "done":
                 self.frames.clear()  # Hard stop
 
@@ -127,18 +129,17 @@ class Vm:
         elif isinstance(node, Op):
             b = frame.pop()
             a = frame.pop()
-            if node.symbol == "+":
-                frame.push(a + b)
-            elif node.symbol == "-":
-                frame.push(a - b)
-            elif node.symbol == "*":
-                frame.push(a * b)
-            elif node.symbol == "/":
-                frame.push(a / b)
-            elif node.symbol == "==":
-                frame.push(a == b)
-            elif node.symbol == "!=":
-                frame.push(a != b)
+            sb = {
+                "+": lambda a, b: a + b,
+                "-": lambda a, b: a - b,
+                "/": lambda a, b: a / b,
+                "*": lambda a, b: a * b,
+                "==": lambda a, b: a == b,
+                "!=": lambda a, b: a != b,
+                ">": lambda a, b: a > b,
+                "<": lambda a, b: a < b,
+            }
+            frame.push(sb[node.symbol](a, b))
 
         elif isinstance(node, Attribute):
             val = frame.pop()
@@ -152,6 +153,9 @@ class Vm:
                 frame.push(bool(val))
             elif node.name == "type":
                 frame.push(type(val))
+            else:
+                frame.push(val)
+                self.funcs[node.name](frame)
 
         elif isinstance(node, Repeat):
             count = frame.pop()
@@ -194,38 +198,87 @@ class Vm:
         self.run_function(self.functions["main"])
 
 
+class API:
+    _builtins = []
+    _onsetup = []
+
+    @classmethod
+    def add(cls, fn):
+        cls._builtins.append(fn)
+        return fn
+
+    @classmethod
+    def onsetup(cls, fn):
+        cls._onsetup.append(fn)
+        return fn
+
+    def __init__(self, vm):
+        self.vm = vm
+
+        vm.frames[0].set("stdin", sys.stdin)
+        vm.frames[0].set("argv", sys.argv)
+        vm.frames[0].set("stdout", sys.stdout)
+        vm.frames[0].set("stderr", sys.stderr)
+
+        for i in self._onsetup:
+            i(self, vm)
+
+        for i, fn in enumerate(self._builtins, start=1):
+            vm.funcs[fn.__name__.lower()] = fn
+
+
+@API.add
+def Open(f):
+    path = f.pop()
+    mode = f.pop()
+    f.push(open(path, mode))
+
+
+@API.add
+def write(f):
+    where: IO = f.pop()
+    text = f.pop()
+    where.write(text)
+
+
+@API.add
+def read(f):
+    where: IO = f.pop()
+    bcount = f.pop()
+    f.push(where.read(bcount))
+
+
+@API.add
+def flush(f):
+    f.pop().flush()
+
+
+@API.add
+def head(f):
+    v = f.pop()[0]
+    # print(v)
+    f.push(v)
+
+
+@API.add
+def reverse(f):
+    f.top().reverse()
+
+
+@API.add
+def length(f: Frame):
+    v = f.pop()
+    # print(v)
+    f.push(len(v))
+
+
+@API.add
+def tail(f):
+    f.push(f.pop()[-1])
+
+
 def buildBuiltins(interp: Vm):
-    interp.frames[0].set("stdin", sys.stdin)
-    interp.frames[0].set("stdout", sys.stdout)
-    interp.frames[0].set("stderr", sys.stderr)
-    fid = 0
-
-    def add(fn):
-        nonlocal fid
-        interp.funcs[fid + 1] = fn
-        fid += 1
-
-    def write(f):
-        where: IO = f.pop()
-        text = f.pop()
-        where.write(text)
-
-    def read(f):
-        where: IO = f.pop()
-        bcount = f.pop()
-        char = where.read(bcount)
-        f.push(char)
-
-    def Open(f):
-        path = f.pop()
-        mode = f.pop()
-        f.push(open(path, mode))
-
-    add(Open)
-
-    add(write)
-    add(read)
-    add(lambda t: t.pop().flush())
+    API(interp)
 
 
 if __name__ == "__main__":
@@ -233,4 +286,7 @@ if __name__ == "__main__":
         print("Usage: ./helios.py <file>")
         sys.exit(1)
     vm = Vm(sys.argv[1])
+    sys.argv.reverse()
+    sys.argv.pop()
+    buildBuiltins(vm)
     vm.run()

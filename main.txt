@@ -2,5 +2,5 @@
 
 main:
 begin
-  24 41 512 dropStack
+  24 41 512 top nprint
 end
