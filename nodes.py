@@ -1,12 +1,12 @@
-# helios interp
+# helios' nodes.py
 import tokenizer
-import sys
+from api import API
+import importlib
 import codecs
 from dataclasses import dataclass, field
 from typing import List, Any, Optional
-from pprint import pprint
 strace = False
-# Mock tokenizer import as per your existing code
+NAMESPACE = {"API": API}
 
 tokenizer.KEYWORDS.update(
     {
@@ -26,8 +26,6 @@ tokenizer.KEYWORDS.update(
         "else",
         "top",
     })
-
-MAX_F = 100
 
 # --- 1. AST Definition (The Structure) ---
 
@@ -121,10 +119,10 @@ class MultiSet(ASTNode):
 
 class Parser:
     def __init__(self, tokens):
-        self.tokens = self.expand_includes(tokens)
+        self.tokens = self.preprocess_hash(tokens)
         self.pos = 0
 
-    def expand_includes(self, tokens):
+    def preprocess_hash(self, tokens):
         """Pre-processor: Handles 'use' directives before parsing"""
         out = []
         i = 0
@@ -138,10 +136,14 @@ class Parser:
                     filename = tt[1].value
                     with open(filename, "r") as f:
                         imported = tokenizer.tokenize(f.read(), filename)
-                    out.extend(imported)
+                    out.extend(self.preprocess_hash(imported))
+                elif tt[0].value == "load":
+                    with open(tt[1].value) as f:
+                        source = f.read()
+
+                    exec(compile(source, tt[1].value, "exec"), NAMESPACE)
                 else:
-                    # Handle other directives or error
-                    pass
+                    raise ValueError(f"'{tt[0].value}' is not a valid # directive")
             else:
                 out.append(tk)
             i += 1
@@ -267,9 +269,8 @@ class Parser:
         elif t.type == "ATTR":
             self.advance()
             return Attribute(t.value[1:])  # strip @
-
         # 5. Keywords / Intrinsics
-        elif t.type in ["pop", "DEBUG_ACTIVE", "top", "return", "break", "continue", "done"]:
+        elif t.type in ["pop","TOGGLE_DEBUG_OUTPUT", "DEBUG_ACTIVE", "top", "return", "break", "continue", "done"]:
             self.advance()
             return Intrinsic(t.value)
 

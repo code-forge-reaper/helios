@@ -2,5 +2,10 @@
 
 main:
 begin
-  24 41 512 top nprint
+  24 dup
+  repeat
+    dprint
+    1 -
+  end
+  print
 end

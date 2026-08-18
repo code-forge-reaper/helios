@@ -1,20 +1,17 @@
-/*
-    add(Open)   # 1
-    add(write)  # 2
-    add(read)   # ...
-    add(lambda t: t.pop().flush())
-*/
+// procs.txt : the back-bone of simple commands in helios
+// intentionally small, since there's only a handfull of things you are
+// likelly to keep repeating everywhere
 
 print:
 begin
-  @str stdout @write
-  "\n" stdout @write
-  stdout @flush
+  @str stdout write
+  "\n" stdout write
+  stdout @io:flush
 end
 
 write:
 begin
-  @write
+  @io:write
 end
 
 swap: a b
